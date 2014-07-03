@@ -11,9 +11,9 @@ namespace XMutator {
                 { "c|csv", v => csv = v != null },
                 { "h|?|help", v => help = v != null },
             };
-            var filePaths = p.Parse(args);
-            if (!filePaths.IsEmpty() && !help) {
-                foreach (var filePath in filePaths) {
+            var dirPaths = p.Parse(args);
+            if (!dirPaths.IsEmpty() && !help) {
+                foreach (var filePath in dirPaths) {
                     // Measure mutation scores
                     var generatedMutatns = 10;
                     var killedMutants = 3;
