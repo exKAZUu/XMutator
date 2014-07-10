@@ -5,7 +5,7 @@ using Paraiba.Linq;
 namespace XMutator {
     internal class Program {
         // run maven test
-        private static string mavenTest(string dirPath) {
+        private static int mavenTest(string dirPath) {
             System.Diagnostics.Process p = new System.Diagnostics.Process();
             p.StartInfo.FileName = System.Environment.GetEnvironmentVariable("ComSpec");
             p.StartInfo.UseShellExecute = false;
@@ -19,10 +19,21 @@ namespace XMutator {
             p.StartInfo.Arguments = cmd;
             p.Start();
             var res = p.StandardOutput.ReadToEnd();
+            var endCode = p.ExitCode;
             p.WaitForExit();
             p.Close();
 
-            return res;
+            // initial:-1 PASS:0 FAIL:1 Not run:2 
+            var resCode = -1;
+            if (res.Contains("No tests to run")) {
+                resCode = 2;
+            } else if (endCode == 0) {
+                resCode = 0;
+            } else {
+                resCode = 1;
+            }
+            
+            return resCode;
         }
 
         private static void Main(string[] args) {
