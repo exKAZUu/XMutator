@@ -1,6 +1,11 @@
 ﻿using System;
 using Mono.Options;
 using Paraiba.Linq;
+using System.Collections;
+using System.IO;
+using System.Text;
+using Code2Xml.Core.Generators;
+using System.Linq;
 
 namespace XMutator {
     internal class Program {
@@ -36,6 +41,36 @@ namespace XMutator {
             return resCode;
         }
 
+        private static string[] getAllJavaFiles(string dirPath) {
+            string[] files = System.IO.Directory.GetFiles(dirPath, "*.java", System.IO.SearchOption.AllDirectories);
+
+            return files;
+        }
+
+        private static void copyDirectory(string sourceDirName, string destDirName) {
+
+            // コピー先のディレクトリが存在しない場合は作成
+            if (!Directory.Exists(destDirName))
+            {
+                // ディレクトリ作成
+                Directory.CreateDirectory(destDirName);
+                // 属性コピー
+                File.SetAttributes(destDirName, File.GetAttributes(sourceDirName));
+            }
+
+            // コピー元のディレクトリに存在するファイルをコピー
+            foreach (string file in Directory.GetFiles(sourceDirName))
+            {
+                File.Copy(file, Path.Combine(destDirName, Path.GetFileName(file)), true);
+            }
+
+            // コピー元のディレクトリをコピー
+            foreach (string dir in Directory.GetDirectories(sourceDirName))
+            {
+                copyDirectory(dir, Path.Combine(destDirName, Path.GetFileName(dir)));
+            }
+        }
+
         private static void Main(string[] args) {
             var csv = false;
             var help = false;
@@ -46,11 +81,39 @@ namespace XMutator {
             var dirPaths = p.Parse(args);
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
-                    var testRes = mavenTest(dirPath);
-                    Console.WriteLine(testRes);
+                    int generatedMutatns = 0;
+                    int killedMutants = 0;
+                    copyDirectory(dirPath, "backup");
+
+                    var files = getAllJavaFiles(dirPath);
+                    foreach (var filePath in files)
+                    {
+                        StreamReader sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"));
+                        string code = sr.ReadToEnd();
+                        sr.Close();
+
+                        var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
+                        var nodes = tree.Descendants().Where(e => e.Name == "statement");
+
+                        foreach (var node in nodes)
+                        {
+                            var restoreFunc = node.Remove();
+                            StreamWriter mutant = new StreamWriter(filePath, false, Encoding.GetEncoding("utf-8"));
+                            mutant.WriteLine(tree.Code);
+                            mutant.Close();
+                            restoreFunc();
+                            generatedMutatns++;
+
+                            var testRes = mavenTest(dirPath);
+                            if (testRes == 0) killedMutants++;
+                        }
+
+                        StreamWriter original = new StreamWriter(filePath, false, Encoding.GetEncoding("utf-8"));
+                        original.WriteLine(tree.Code);
+                        original.Close();
+                    }
+
                     // Measure mutation scores
-                    var generatedMutatns = 10;
-                    var killedMutants = 3;
                     var percentage = killedMutants * 100 / generatedMutatns;
                     if (csv) {
                         Console.WriteLine(killedMutants + "," + generatedMutatns + "," + percentage);
