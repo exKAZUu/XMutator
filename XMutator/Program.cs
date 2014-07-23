@@ -1,24 +1,28 @@
 ﻿using System;
-using Mono.Options;
-using Paraiba.Linq;
-using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Code2Xml.Core.Generators;
-using System.Linq;
+using Mono.Options;
+using Paraiba.Linq;
 
 namespace XMutator {
     internal class Program {
         // run maven test
-        private static int mavenTest(string dirPath) {
-            System.Diagnostics.Process p = new System.Diagnostics.Process();
-            p.StartInfo.FileName = System.Environment.GetEnvironmentVariable("ComSpec");
-            p.StartInfo.UseShellExecute = false;
-            p.StartInfo.RedirectStandardOutput = true;
-            p.StartInfo.RedirectStandardInput = false;
-            p.StartInfo.CreateNoWindow = true;
-            
-            System.IO.Directory.SetCurrentDirectory(dirPath);
+        private static int MavenTest(string dirPath) {
+            var p = new Process {
+                StartInfo = {
+                    FileName = Environment.GetEnvironmentVariable("ComSpec"),
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardInput = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            Directory.SetCurrentDirectory(dirPath);
             var cmd = "/c mvn test";
 
             p.StartInfo.Arguments = cmd;
@@ -37,21 +41,17 @@ namespace XMutator {
             } else {
                 resCode = 1;
             }
-            
+
             return resCode;
         }
 
-        private static string[] getAllJavaFiles(string dirPath) {
-            string[] files = System.IO.Directory.GetFiles(dirPath, "*.java", System.IO.SearchOption.AllDirectories);
-
-            return files;
+        private static IEnumerable<string> GetAllJavaFiles(string dirPath) {
+            return Directory.GetFiles(dirPath, "*.java", SearchOption.AllDirectories);
         }
 
-        private static void copyDirectory(string sourceDirName, string destDirName) {
-
+        private static void CopyDirectory(string sourceDirName, string destDirName) {
             // コピー先のディレクトリが存在しない場合は作成
-            if (!Directory.Exists(destDirName))
-            {
+            if (!Directory.Exists(destDirName)) {
                 // ディレクトリ作成
                 Directory.CreateDirectory(destDirName);
                 // 属性コピー
@@ -59,15 +59,13 @@ namespace XMutator {
             }
 
             // コピー元のディレクトリに存在するファイルをコピー
-            foreach (string file in Directory.GetFiles(sourceDirName))
-            {
+            foreach (string file in Directory.GetFiles(sourceDirName)) {
                 File.Copy(file, Path.Combine(destDirName, Path.GetFileName(file)), true);
             }
 
             // コピー元のディレクトリをコピー
-            foreach (string dir in Directory.GetDirectories(sourceDirName))
-            {
-                copyDirectory(dir, Path.Combine(destDirName, Path.GetFileName(dir)));
+            foreach (string dir in Directory.GetDirectories(sourceDirName)) {
+                CopyDirectory(dir, Path.Combine(destDirName, Path.GetFileName(dir)));
             }
         }
 
@@ -83,34 +81,36 @@ namespace XMutator {
                 foreach (var dirPath in dirPaths) {
                     int generatedMutatns = 0;
                     int killedMutants = 0;
-                    copyDirectory(dirPath, "backup");
+                    CopyDirectory(dirPath, "backup");
 
-                    var files = getAllJavaFiles(dirPath);
-                    foreach (var filePath in files)
-                    {
-                        StreamReader sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"));
-                        string code = sr.ReadToEnd();
-                        sr.Close();
+                    var files = GetAllJavaFiles(dirPath);
+                    foreach (var filePath in files) {
+                        string code;
+                        using (var sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"))) {
+                            code = sr.ReadToEnd();
+                        }
 
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
                         var nodes = tree.Descendants().Where(e => e.Name == "statement");
 
-                        foreach (var node in nodes)
-                        {
+                        foreach (var node in nodes) {
                             var restoreFunc = node.Remove();
-                            StreamWriter mutant = new StreamWriter(filePath, false, Encoding.GetEncoding("utf-8"));
-                            mutant.WriteLine(tree.Code);
-                            mutant.Close();
+                            using (var mutant = new StreamWriter(filePath, false,
+                                    Encoding.GetEncoding("utf-8"))) {
+                                mutant.WriteLine(tree.Code);
+                            }
                             restoreFunc();
                             generatedMutatns++;
 
-                            var testRes = mavenTest(dirPath);
-                            if (testRes == 0) killedMutants++;
+                            var testRes = MavenTest(dirPath);
+                            if (testRes == 0) {
+                                killedMutants++;
+                            }
                         }
 
-                        StreamWriter original = new StreamWriter(filePath, false, Encoding.GetEncoding("utf-8"));
-                        original.WriteLine(tree.Code);
-                        original.Close();
+                        using (var original = new StreamWriter(filePath, false,
+                                Encoding.GetEncoding("utf-8")))
+                            original.WriteLine(tree.Code);
                     }
 
                     // Measure mutation scores
