@@ -81,11 +81,18 @@ namespace XMutator {
             var dirPaths = p.Parse(args);
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
-                    int generatedMutatns = 0;
-                    int killedMutants = 0;
                     copyDirectory(dirPath, "backup");
 
-                    var files = getAllJavaFiles(dirPath);
+                    if (mavenTest(dirPath) == 2)
+                    {
+                        Console.WriteLine("Not Run Tests");
+                        System.Environment.Exit(0);
+                    }
+
+                    int generatedMutatns = 0;
+                    int killedMutants = 0;
+
+                    var files = getAllJavaFiles(dirPath+"\\src\\main");
                     foreach (var filePath in files)
                     {
                         StreamReader sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"));
