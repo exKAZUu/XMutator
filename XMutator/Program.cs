@@ -102,12 +102,12 @@ namespace XMutator {
                         var nodes = tree.Descendants().Where(e => e.Name == "statement");
 
                         foreach (var node in nodes) {
-                            var restoreFunc = node.Remove();
+                            node.Replacement = "{}";
                             using (var mutant = new StreamWriter(filePath, false,
                                     Encoding.GetEncoding("utf-8"))) {
                                 mutant.WriteLine(tree.Code);
                             }
-                            restoreFunc();
+                            node.Replacement = null;
                             generatedMutatns++;
 
                             var testRes = MavenTest(dirPath);
