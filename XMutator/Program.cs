@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Code2Xml.Core;
 using Code2Xml.Core.Generators;
 using Mono.Options;
 using Paraiba.Linq;
@@ -102,8 +101,8 @@ namespace XMutator {
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
                         var nodes = tree.Descendants().Where(e => e.Name == "statement");
 
-                        foreach (var node in nodes.ToList()) {
-                            var restoreFunc = node.RecoverablyRemove();
+                        foreach (var node in nodes) {
+                            var restoreFunc = node.Remove();
                             using (var mutant = new StreamWriter(filePath, false,
                                     Encoding.GetEncoding("utf-8"))) {
                                 mutant.WriteLine(tree.Code);
