@@ -80,9 +80,9 @@ namespace XMutator {
             var dirPaths = p.Parse(args);
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
-                    copyDirectory(dirPath, "backup");
+                    CopyDirectory(dirPath, "backup");
 
-                    if (mavenTest(dirPath) == 2)
+                    if (MavenTest(dirPath) == 2)
                     {
                         Console.WriteLine("Not Run Tests");
                         System.Environment.Exit(0);
@@ -91,7 +91,7 @@ namespace XMutator {
                     int generatedMutatns = 0;
                     int killedMutants = 0;
                     
-                    var files = getAllJavaFiles(dirPath+"\\src\\main");
+                    var files = GetAllJavaFiles(dirPath+"\\src\\main");
                     foreach (var filePath in files)
                     {
                         string code;
