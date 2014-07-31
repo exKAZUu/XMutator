@@ -79,7 +79,8 @@ namespace XMutator {
             var dirPaths = p.Parse(args);
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
-                    CopyDirectory(dirPath, "backup");
+                    string projName = Path.GetFileName(dirPath);
+                    CopyDirectory(dirPath, "backup\\"+projName);
 
                     if (MavenTest(dirPath) == 2)
                     {
