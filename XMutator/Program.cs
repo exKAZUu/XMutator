@@ -49,9 +49,41 @@ namespace XMutator {
             return Directory.GetFiles(dirPath, "*.java", SearchOption.AllDirectories);
         }
 
+        private static void RemoveReadonlyAttribute(DirectoryInfo dirInfo)
+        {
+            //基のフォルダの属性を変更
+            if ((dirInfo.Attributes & FileAttributes.ReadOnly) ==
+                FileAttributes.ReadOnly)
+                dirInfo.Attributes = FileAttributes.Normal;
+            //フォルダ内のすべてのファイルの属性を変更
+            foreach (FileInfo fi in dirInfo.GetFiles())
+                if ((fi.Attributes & FileAttributes.ReadOnly) ==
+                    FileAttributes.ReadOnly)
+                    fi.Attributes = FileAttributes.Normal;
+            //サブフォルダの属性を回帰的に変更
+            foreach (DirectoryInfo di in dirInfo.GetDirectories())
+                RemoveReadonlyAttribute(di);
+        }
+
         private static void CopyDirectory(string sourceDirName, string destDirName) {
             // コピー先のディレクトリが存在しない場合は作成
             if (!Directory.Exists(destDirName)) {
+                // ディレクトリ作成
+                Directory.CreateDirectory(destDirName);
+                // 属性コピー
+                File.SetAttributes(destDirName, File.GetAttributes(sourceDirName));
+            }
+            else
+            {
+                //DirectoryInfoオブジェクトの作成
+                DirectoryInfo di = new DirectoryInfo(destDirName);
+
+                //フォルダ以下のすべてのファイル、フォルダの属性を削除
+                RemoveReadonlyAttribute(di);
+
+                //フォルダを根こそぎ削除
+                di.Delete(true);
+
                 // ディレクトリ作成
                 Directory.CreateDirectory(destDirName);
                 // 属性コピー
@@ -101,25 +133,33 @@ namespace XMutator {
 
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
                         var nodes = tree.Descendants().Where(e => e.Name == "statement");
+                        var size = nodes.Count();
 
+                        var i = 1;
                         foreach (var node in nodes) {
+                            string fileName = Path.GetFileName(filePath);
+                            Console.Write("\r" + fileName + ":[" + i + "/" + size + "]");
+
                             node.Replacement = "{}";
                             using (var mutant = new StreamWriter(filePath, false,
-                                    Encoding.GetEncoding("utf-8"))) {
+                                Encoding.GetEncoding("utf-8"))) {
                                 mutant.WriteLine(tree.Code);
                             }
+                            //Console.WriteLine(tree.Code);
                             node.Replacement = null;
                             generatedMutatns++;
 
                             var testRes = MavenTest(dirPath);
-                            if (testRes == 0) {
+                            if (testRes == 1) {
                                 killedMutants++;
                             }
+                            i++;
                         }
 
                         using (var original = new StreamWriter(filePath, false,
                                 Encoding.GetEncoding("utf-8")))
                             original.WriteLine(tree.Code);
+                        Console.WriteLine("");
                     }
 
                     // Measure mutation scores
