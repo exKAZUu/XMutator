@@ -32,6 +32,8 @@ namespace XMutator {
             p.WaitForExit();
             p.Close();
 
+            //Console.WriteLine(res);
+
             // initial:-1 PASS:0 FAIL:1 Not run:2 
             var resCode = -1;
             if (res.Contains("No tests to run")) {
@@ -104,9 +106,11 @@ namespace XMutator {
         private static void Main(string[] args) {
             var csv = false;
             var help = false;
+            var ratio = "100";
             var p = new OptionSet {
                 { "c|csv", v => csv = v != null },
                 { "h|?|help", v => help = v != null },
+                { "r|ratio=", v => ratio = v },
             };
             var dirPaths = p.Parse(args);
             if (!dirPaths.IsEmpty() && !help) {
@@ -126,12 +130,12 @@ namespace XMutator {
                     var files = GetAllJavaFiles(dirPath+"\\src\\main");
                     foreach (var filePath in files)
                     {
-                        string code;
-                        using (var sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"))) {
-                            code = sr.ReadToEnd();
-                        }
+                        //string code;
+                        //using (var sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"))) {
+                        //    code = sr.ReadToEnd();
+                        //}
 
-                        var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
+                        var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(filePath);
                         var nodes = tree.Descendants().Where(e => e.Name == "statement");
                         var size = nodes.Count();
 
@@ -142,7 +146,7 @@ namespace XMutator {
 
                             node.Replacement = "{}";
                             using (var mutant = new StreamWriter(filePath, false,
-                                Encoding.GetEncoding("utf-8"))) {
+                                Encoding.GetEncoding(932))) {
                                 mutant.WriteLine(tree.Code);
                             }
                             //Console.WriteLine(tree.Code);
@@ -157,7 +161,7 @@ namespace XMutator {
                         }
 
                         using (var original = new StreamWriter(filePath, false,
-                                Encoding.GetEncoding("utf-8")))
+                                Encoding.GetEncoding(932)))
                             original.WriteLine(tree.Code);
                         Console.WriteLine("");
                     }
