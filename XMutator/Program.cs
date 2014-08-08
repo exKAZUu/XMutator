@@ -112,7 +112,15 @@ namespace XMutator {
                 { "h|?|help", v => help = v != null },
                 { "r|ratio=", v => ratio = v },
             };
+            
             var dirPaths = p.Parse(args);
+            int temp;
+            if (!int.TryParse(ratio, out temp) || ((temp < 0) || (temp > 100)))
+            {
+                Console.WriteLine("ratio is invalid value");
+                System.Environment.Exit(0);
+            }
+         
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
                     string projName = Path.GetFileName(dirPath);
@@ -130,40 +138,56 @@ namespace XMutator {
                     var files = GetAllJavaFiles(dirPath+"\\src\\main");
                     foreach (var filePath in files)
                     {
-                        //string code;
-                        //using (var sr = new StreamReader(filePath, Encoding.GetEncoding("utf-8"))) {
-                        //    code = sr.ReadToEnd();
-                        //}
-
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(filePath);
                         var nodes = tree.Descendants().Where(e => e.Name == "statement");
                         var size = nodes.Count();
 
+                        var index = nodes.OrderBy(j => Guid.NewGuid()).ToArray();
+                        var range = size * (double.Parse(ratio) / 100.0);
+
                         var i = 1;
                         foreach (var node in nodes) {
-                            string fileName = Path.GetFileName(filePath);
-                            Console.Write("\r" + fileName + ":[" + i + "/" + size + "]");
-
-                            node.Replacement = "{}";
-                            using (var mutant = new StreamWriter(filePath, false,
-                                Encoding.GetEncoding(932))) {
-                                mutant.WriteLine(tree.Code);
+                            
+                            var flag = false;
+                            if ((range >= 1) && Array.IndexOf(index, node, 0, (int)range) != -1)
+                            {
+                                flag = true;
                             }
-                            //Console.WriteLine(tree.Code);
-                            node.Replacement = null;
-                            generatedMutatns++;
 
-                            var testRes = MavenTest(dirPath);
-                            if (testRes == 1) {
-                                killedMutants++;
+                            if (flag)
+                            {
+                                if (!csv)
+                                {
+                                    string fileName = Path.GetFileName(filePath);
+                                    Console.Write("\r" + fileName + ":[" + i + "/" + (int)range + "]");
+                                }
+                                node.Replacement = "{}";
+
+                                using (var mutant = new StreamWriter(filePath, false,
+                                    Encoding.GetEncoding(932)))
+                                {
+                                    mutant.WriteLine(tree.Code);
+                                }
+                                //Console.WriteLine(tree.Code);
+                                node.Replacement = null;
+                                generatedMutatns++;
+
+                                var testRes = MavenTest(dirPath);
+                                if (testRes == 1)
+                                {
+                                    killedMutants++;
+                                }
+                                i++;
                             }
-                            i++;
                         }
 
                         using (var original = new StreamWriter(filePath, false,
                                 Encoding.GetEncoding(932)))
-                            original.WriteLine(tree.Code);
-                        Console.WriteLine("");
+                        original.WriteLine(tree.Code);
+                        if (!csv)
+                        {
+                            Console.WriteLine("");
+                        }
                     }
 
                     // Measure mutation scores
