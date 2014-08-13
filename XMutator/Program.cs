@@ -59,14 +59,14 @@ namespace XMutator {
                 dirInfo.Attributes = FileAttributes.Normal;
             }
             //フォルダ内のすべてのファイルの属性を変更
-            foreach (FileInfo fi in dirInfo.GetFiles()) {
+            foreach (var fi in dirInfo.GetFiles()) {
                 if ((fi.Attributes & FileAttributes.ReadOnly) ==
                     FileAttributes.ReadOnly) {
                     fi.Attributes = FileAttributes.Normal;
                 }
             }
             //サブフォルダの属性を回帰的に変更
-            foreach (DirectoryInfo di in dirInfo.GetDirectories()) {
+            foreach (var di in dirInfo.GetDirectories()) {
                 RemoveReadonlyAttribute(di);
             }
         }
@@ -125,7 +125,7 @@ namespace XMutator {
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
                     var projName = Path.GetFileName(dirPath);
-                    CopyDirectory(dirPath, "backup\\" + projName);
+                    CopyDirectory(dirPath, Path.Combine("backup", projName));
 
                     if (MavenTest(dirPath) == 2) {
                         Console.WriteLine("Not Run Tests");
@@ -135,7 +135,7 @@ namespace XMutator {
                     var generatedMutatns = 0;
                     var killedMutants = 0;
 
-                    var files = GetAllJavaFiles(dirPath + "\\src\\main");
+                    var files = GetAllJavaFiles(Path.Combine(dirPath, "src", "main"));
                     foreach (var filePath in files) {
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(filePath);
                         var nodes = tree.Descendants()
@@ -153,9 +153,7 @@ namespace XMutator {
                             node.Replacement = "{}";
 
                             using (var mutant = new StreamWriter(filePath, false,
-                                    Encoding.GetEncoding(932))) {
-                                mutant.WriteLine(tree.Code);
-                            }
+                                    Encoding.GetEncoding(932))) mutant.WriteLine(tree.Code);
                             //Console.WriteLine(tree.Code);
                             node.Replacement = null;
                             generatedMutatns++;
