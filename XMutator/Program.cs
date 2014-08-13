@@ -7,26 +7,31 @@ using System.Text;
 using Code2Xml.Core.Generators;
 using Mono.Options;
 using Paraiba.Collections.Generic;
+using Paraiba.Core;
 using Paraiba.Linq;
 
 namespace XMutator {
     internal class Program {
         // run maven test
         private static int MavenTest(string dirPath) {
+            Directory.SetCurrentDirectory(dirPath);
+
             var p = new Process {
                 StartInfo = {
-                    FileName = Environment.GetEnvironmentVariable("ComSpec"),
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardInput = false,
-                    CreateNoWindow = true
-                }
+                    CreateNoWindow = true,
+                },
             };
+            if (!ParaibaEnvironment.OnUnixLike()) {
+                p.StartInfo.FileName = Environment.GetEnvironmentVariable("ComSpec");
+                p.StartInfo.Arguments = "/c mvn test";
+            } else {
+                p.StartInfo.FileName = "mvn";
+                p.StartInfo.Arguments = "test";
+            }
 
-            Directory.SetCurrentDirectory(dirPath);
-            var cmd = "/c mvn test";
-
-            p.StartInfo.Arguments = cmd;
             p.Start();
             var res = p.StandardOutput.ReadToEnd();
             var endCode = p.ExitCode;
