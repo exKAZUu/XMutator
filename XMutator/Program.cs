@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using Code2Xml.Core.Generators;
 using Mono.Options;
+using Paraiba.Collections.Generic;
 using Paraiba.Linq;
 
 namespace XMutator {
@@ -51,20 +52,23 @@ namespace XMutator {
             return Directory.GetFiles(dirPath, "*.java", SearchOption.AllDirectories);
         }
 
-        private static void RemoveReadonlyAttribute(DirectoryInfo dirInfo)
-        {
+        private static void RemoveReadonlyAttribute(DirectoryInfo dirInfo) {
             //基のフォルダの属性を変更
             if ((dirInfo.Attributes & FileAttributes.ReadOnly) ==
-                FileAttributes.ReadOnly)
+                FileAttributes.ReadOnly) {
                 dirInfo.Attributes = FileAttributes.Normal;
+            }
             //フォルダ内のすべてのファイルの属性を変更
-            foreach (FileInfo fi in dirInfo.GetFiles())
+            foreach (FileInfo fi in dirInfo.GetFiles()) {
                 if ((fi.Attributes & FileAttributes.ReadOnly) ==
-                    FileAttributes.ReadOnly)
+                    FileAttributes.ReadOnly) {
                     fi.Attributes = FileAttributes.Normal;
+                }
+            }
             //サブフォルダの属性を回帰的に変更
-            foreach (DirectoryInfo di in dirInfo.GetDirectories())
+            foreach (DirectoryInfo di in dirInfo.GetDirectories()) {
                 RemoveReadonlyAttribute(di);
+            }
         }
 
         private static void CopyDirectory(string sourceDirName, string destDirName) {
@@ -74,11 +78,9 @@ namespace XMutator {
                 Directory.CreateDirectory(destDirName);
                 // 属性コピー
                 File.SetAttributes(destDirName, File.GetAttributes(sourceDirName));
-            }
-            else
-            {
+            } else {
                 //DirectoryInfoオブジェクトの作成
-                DirectoryInfo di = new DirectoryInfo(destDirName);
+                var di = new DirectoryInfo(destDirName);
 
                 //フォルダ以下のすべてのファイル、フォルダの属性を削除
                 RemoveReadonlyAttribute(di);
@@ -93,12 +95,12 @@ namespace XMutator {
             }
 
             // コピー元のディレクトリに存在するファイルをコピー
-            foreach (string file in Directory.GetFiles(sourceDirName)) {
+            foreach (var file in Directory.GetFiles(sourceDirName)) {
                 File.Copy(file, Path.Combine(destDirName, Path.GetFileName(file)), true);
             }
 
             // コピー元のディレクトリをコピー
-            foreach (string dir in Directory.GetDirectories(sourceDirName)) {
+            foreach (var dir in Directory.GetDirectories(sourceDirName)) {
                 CopyDirectory(dir, Path.Combine(destDirName, Path.GetFileName(dir)));
             }
         }
@@ -106,86 +108,68 @@ namespace XMutator {
         private static void Main(string[] args) {
             var csv = false;
             var help = false;
-            var ratio = "100";
+            var ratioStr = "100";
             var p = new OptionSet {
                 { "c|csv", v => csv = v != null },
                 { "h|?|help", v => help = v != null },
-                { "r|ratio=", v => ratio = v },
+                { "r|ratio=", v => ratioStr = v },
             };
-            
+
             var dirPaths = p.Parse(args);
-            int temp;
-            if (!int.TryParse(ratio, out temp) || ((temp < 0) || (temp > 100)))
-            {
+            int ratio;
+            if (!int.TryParse(ratioStr, out ratio) || !(0 < ratio && ratio <= 100)) {
                 Console.WriteLine("ratio is invalid value");
-                System.Environment.Exit(0);
+                Environment.Exit(0);
             }
-         
+
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
-                    string projName = Path.GetFileName(dirPath);
-                    CopyDirectory(dirPath, "backup\\"+projName);
+                    var projName = Path.GetFileName(dirPath);
+                    CopyDirectory(dirPath, "backup\\" + projName);
 
-                    if (MavenTest(dirPath) == 2)
-                    {
+                    if (MavenTest(dirPath) == 2) {
                         Console.WriteLine("Not Run Tests");
-                        System.Environment.Exit(0);
+                        Environment.Exit(0);
                     }
 
-                    int generatedMutatns = 0;
-                    int killedMutants = 0;
-                    
-                    var files = GetAllJavaFiles(dirPath+"\\src\\main");
-                    foreach (var filePath in files)
-                    {
+                    var generatedMutatns = 0;
+                    var killedMutants = 0;
+
+                    var files = GetAllJavaFiles(dirPath + "\\src\\main");
+                    foreach (var filePath in files) {
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(filePath);
-                        var nodes = tree.Descendants().Where(e => e.Name == "statement");
-                        var size = nodes.Count();
+                        var nodes = tree.Descendants()
+                                .Where(e => e.Name == "statement")
+                                .ToList()
+                                .Shuffle();
+                        var maxCount = nodes.Count * ratio / 100;
 
-                        var index = nodes.OrderBy(j => Guid.NewGuid()).ToArray();
-                        var range = size * (double.Parse(ratio) / 100.0);
-
-                        var i = 1;
-                        foreach (var node in nodes) {
-                            
-                            var flag = false;
-                            if ((range >= 1) && Array.IndexOf(index, node, 0, (int)range) != -1)
-                            {
-                                flag = true;
+                        for (int i = 0; i < maxCount; i++) {
+                            var node = nodes[i];
+                            if (!csv) {
+                                var fileName = Path.GetFileName(filePath);
+                                Console.Write("\r" + fileName + ":[" + i + "/" + maxCount + "]");
                             }
+                            node.Replacement = "{}";
 
-                            if (flag)
-                            {
-                                if (!csv)
-                                {
-                                    string fileName = Path.GetFileName(filePath);
-                                    Console.Write("\r" + fileName + ":[" + i + "/" + (int)range + "]");
-                                }
-                                node.Replacement = "{}";
+                            using (var mutant = new StreamWriter(filePath, false,
+                                    Encoding.GetEncoding(932))) {
+                                mutant.WriteLine(tree.Code);
+                            }
+                            //Console.WriteLine(tree.Code);
+                            node.Replacement = null;
+                            generatedMutatns++;
 
-                                using (var mutant = new StreamWriter(filePath, false,
-                                    Encoding.GetEncoding(932)))
-                                {
-                                    mutant.WriteLine(tree.Code);
-                                }
-                                //Console.WriteLine(tree.Code);
-                                node.Replacement = null;
-                                generatedMutatns++;
-
-                                var testRes = MavenTest(dirPath);
-                                if (testRes == 1)
-                                {
-                                    killedMutants++;
-                                }
-                                i++;
+                            var testRes = MavenTest(dirPath);
+                            if (testRes == 1) {
+                                killedMutants++;
                             }
                         }
 
                         using (var original = new StreamWriter(filePath, false,
                                 Encoding.GetEncoding(932)))
-                        original.WriteLine(tree.Code);
-                        if (!csv)
-                        {
+                            original.WriteLine(tree.Code);
+                        if (!csv) {
                             Console.WriteLine("");
                         }
                     }
