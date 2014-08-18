@@ -4,11 +4,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Xml.Linq;
 using Code2Xml.Core.Generators;
 using Mono.Options;
 using Paraiba.Collections.Generic;
 using Paraiba.Core;
 using Paraiba.Linq;
+using Paraiba.Text;
 
 namespace XMutator {
     internal class Program {
@@ -110,41 +112,86 @@ namespace XMutator {
             }
         }
 
+        private static string GetSourceDirectoryPath(FileInfo pomFileInfo) {
+            using (var fs = pomFileInfo.OpenRead()) {
+                var doc = XDocument.Load(fs);
+                foreach (var e in doc.Descendants("build")) {
+                    var e2 = e.Element("sourceDirectory");
+                    if (e2 != null) {
+                        var splitter = e2.Value.Contains("/") ? '/' : '\\';
+                        return Path.Combine(pomFileInfo.DirectoryName,
+                                Path.Combine(e2.Value.Split(splitter)));
+                    }
+                }
+            }
+            return Path.Combine(pomFileInfo.DirectoryName, "src", "main");
+        }
+
         private static void Main(string[] args) {
             var csv = false;
             var help = false;
-            var ratioStr = "100";
+            var ratio = 100;
+            var maxStatementCount = 1000 * 100;
             var p = new OptionSet {
                 { "c|csv", v => csv = v != null },
-                { "h|?|help", v => help = v != null },
-                { "r|ratio=", v => ratioStr = v },
+                { "h|?|help", v => help = v != null }, {
+                    "r|ratio=", v => {
+                        if (!int.TryParse(v, out ratio) || !(0 < ratio && ratio <= 100)) {
+                            Console.WriteLine("The given ratio is an invalid value.");
+                            Environment.Exit(0);
+                        }
+                    }
+                }, {
+                    "l|limit=", v => {
+                        if (!int.TryParse(v, out maxStatementCount) || !(0 < maxStatementCount)) {
+                            Console.WriteLine("The given limit is an invalid value.");
+                            Environment.Exit(0);
+                        }
+                    }
+                },
             };
-
             var dirPaths = p.Parse(args);
-            int ratio;
-            if (!int.TryParse(ratioStr, out ratio) || !(0 < ratio && ratio <= 100)) {
-                Console.WriteLine("ratio is invalid value");
-                Environment.Exit(0);
-            }
 
             if (!dirPaths.IsEmpty() && !help) {
                 foreach (var dirPath in dirPaths) {
-                    var projName = Path.GetFileName(dirPath);
-                    CopyDirectory(dirPath, Path.Combine("backup", projName));
+                    //var projName = Path.GetFileName(dirPath);
+                    //CopyDirectory(dirPath, Path.Combine("backup", projName));
 
                     if (MavenTest(dirPath) == 2) {
-                        Console.WriteLine("Not Run Tests");
+                        Console.WriteLine("No tests run.");
                         Environment.Exit(0);
                     }
 
                     var generatedMutatns = 0;
                     var killedMutants = 0;
 
-                    var files = GetAllJavaFiles(Path.Combine(dirPath, "src", "main"));
+                    var files = Directory.GetFiles(dirPath, "pom.xml", SearchOption.AllDirectories)
+                            .Select(pomPath => GetSourceDirectoryPath(new FileInfo(pomPath)))
+                            .SelectMany(GetAllJavaFiles)
+                            .ToList();
+                    var statementCount = files.Select(
+                            f => CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(f))
+                            .SelectMany(cst => cst.Descendants("statement"))
+                            .Count();
+                    if (statementCount > maxStatementCount) {
+                        Console.WriteLine("Too many statement.");
+                        Environment.Exit(0);
+                    }
+
                     foreach (var filePath in files) {
-                        var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(filePath);
-                        var nodes = tree.Descendants()
-                                .Where(e => e.Name == "statement")
+                        Encoding encoding;
+                        using (var sr = new FileStream(filePath, FileMode.Open)) {
+                            var bytes = new byte[1024 * 100];
+                            sr.Read(bytes, 0, bytes.Length);
+                            //encoding = GuessEncoding.GetEncoding(bytes);
+                            //if (encoding.CodePage == 65001) {
+                            //    encoding = new UTF8Encoding(false);
+                            //}
+                            encoding = XEncoding.SJIS;
+                        }
+                        var code = File.ReadAllText(filePath, encoding);
+                        var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
+                        var nodes = tree.Descendants("statement")
                                 .ToList()
                                 .Shuffle();
                         var maxCount = nodes.Count * ratio / 100;
@@ -153,12 +200,13 @@ namespace XMutator {
                             var node = nodes[i];
                             if (!csv) {
                                 var fileName = Path.GetFileName(filePath);
-                                Console.Write("\r" + fileName + ":[" + i + "/" + maxCount + "]");
+                                Console.Write("\r" + fileName + ":[" + (i + 1) + "/" + maxCount
+                                              + "]");
                             }
                             node.Replacement = "{}";
 
-                            using (var mutant = new StreamWriter(filePath, false,
-                                    Encoding.GetEncoding(932))) mutant.WriteLine(tree.Code);
+                            using (var mutant = new StreamWriter(filePath, false, encoding))
+                                mutant.WriteLine(tree.Code);
                             //Console.WriteLine(tree.Code);
                             node.Replacement = null;
                             generatedMutatns++;
@@ -169,8 +217,7 @@ namespace XMutator {
                             }
                         }
 
-                        using (var original = new StreamWriter(filePath, false,
-                                Encoding.GetEncoding(932)))
+                        using (var original = new StreamWriter(filePath, false, encoding))
                             original.WriteLine(tree.Code);
                         if (!csv) {
                             Console.WriteLine("");
