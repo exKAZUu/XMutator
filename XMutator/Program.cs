@@ -15,7 +15,7 @@ using Paraiba.Text;
 namespace XMutator {
     internal class Program {
         // run maven test
-        private static int MavenTest(string dirPath) {
+        private static bool MavenTest(string dirPath) {
             Directory.SetCurrentDirectory(dirPath);
 
             var p = new Process {
@@ -42,17 +42,8 @@ namespace XMutator {
 
             //Console.WriteLine(res);
 
-            // initial:-1 PASS:0 FAIL:1 Not run:2 
-            var resCode = -1;
-            if (res.Contains("No tests to run")) {
-                resCode = 2;
-            } else if (endCode == 0) {
-                resCode = 0;
-            } else {
-                resCode = 1;
-            }
-
-            return resCode;
+            var passed = endCode == 0;
+            return passed;
         }
 
         private static IEnumerable<string> GetAllJavaFiles(string dirPath) {
@@ -131,21 +122,21 @@ namespace XMutator {
             var csv = false;
             var help = false;
             var ratio = 100;
-            var maxStatementCount = 1000 * 100;
+            var maxStatementCount = 1000;
             var p = new OptionSet {
                 { "c|csv", v => csv = v != null },
                 { "h|?|help", v => help = v != null }, {
                     "r|ratio=", v => {
                         if (!int.TryParse(v, out ratio) || !(0 < ratio && ratio <= 100)) {
-                            Console.WriteLine("The given ratio is an invalid value.");
-                            Environment.Exit(0);
+                            Console.Error.WriteLine("The given ratio is an invalid value.");
+                            Environment.Exit(-1);
                         }
                     }
                 }, {
                     "l|limit=", v => {
                         if (!int.TryParse(v, out maxStatementCount) || !(0 < maxStatementCount)) {
-                            Console.WriteLine("The given limit is an invalid value.");
-                            Environment.Exit(0);
+                            Console.Error.WriteLine("The given limit is an invalid value.");
+                            Environment.Exit(-1);
                         }
                     }
                 },
@@ -157,9 +148,9 @@ namespace XMutator {
                     //var projName = Path.GetFileName(dirPath);
                     //CopyDirectory(dirPath, Path.Combine("backup", projName));
 
-                    if (MavenTest(dirPath) == 2) {
-                        Console.WriteLine("No tests run.");
-                        Environment.Exit(0);
+                    if (!MavenTest(dirPath)) {
+                        Console.Error.WriteLine("Test cases have already failed.");
+                        Environment.Exit(-1);
                     }
 
                     var generatedMutatns = 0;
@@ -173,21 +164,24 @@ namespace XMutator {
                             f => CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(f))
                             .SelectMany(cst => cst.Descendants("statement"))
                             .Count();
+                    if (!csv) {
+                        Console.WriteLine("Statements: " + statementCount + " / " + maxStatementCount);
+                    }
+
                     if (statementCount > maxStatementCount) {
-                        Console.WriteLine("Too many statement.");
-                        Environment.Exit(0);
+                        Console.Error.WriteLine("Too many statement.");
+                        Environment.Exit(-1);
                     }
 
                     foreach (var filePath in files) {
                         Encoding encoding;
                         using (var sr = new FileStream(filePath, FileMode.Open)) {
-                            var bytes = new byte[1024 * 100];
+                            var bytes = new byte[1024 * 10];
                             sr.Read(bytes, 0, bytes.Length);
-                            //encoding = GuessEncoding.GetEncoding(bytes);
-                            //if (encoding.CodePage == 65001) {
-                            //    encoding = new UTF8Encoding(false);
-                            //}
-                            encoding = XEncoding.SJIS;
+                            encoding = GuessEncoding.GetEncoding(bytes);
+                            if (encoding.CodePage == 65001) {
+                                encoding = new UTF8Encoding(false);
+                            }
                         }
                         var code = File.ReadAllText(filePath, encoding);
                         var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
@@ -211,8 +205,8 @@ namespace XMutator {
                             node.Replacement = null;
                             generatedMutatns++;
 
-                            var testRes = MavenTest(dirPath);
-                            if (testRes == 1) {
+                            var passed = MavenTest(dirPath);
+                            if (!passed) {
                                 killedMutants++;
                             }
                         }
