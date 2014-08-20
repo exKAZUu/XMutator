@@ -122,7 +122,7 @@ namespace XMutator {
             var csv = false;
             var help = false;
             var ratio = 100;
-            var maxStatementCount = 1000;
+            var maxMinutes = 60;
             var p = new OptionSet {
                 { "c|csv", v => csv = v != null },
                 { "h|?|help", v => help = v != null }, {
@@ -134,7 +134,7 @@ namespace XMutator {
                     }
                 }, {
                     "l|limit=", v => {
-                        if (!int.TryParse(v, out maxStatementCount) || !(0 < maxStatementCount)) {
+                        if (!int.TryParse(v, out maxMinutes) || !(0 < maxMinutes)) {
                             Console.Error.WriteLine("The given limit is an invalid value.");
                             Environment.Exit(-1);
                         }
@@ -153,6 +153,10 @@ namespace XMutator {
                         Environment.Exit(-1);
                     }
 
+                    var time = Environment.TickCount;
+                    MavenTest(dirPath);
+                    time = (Environment.TickCount - time);
+
                     var generatedMutatns = 0;
                     var killedMutants = 0;
 
@@ -164,11 +168,15 @@ namespace XMutator {
                             f => CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(f))
                             .SelectMany(cst => cst.Descendants("statement"))
                             .Count();
+
+                    var estimatedMinutes = time * statementCount / 1000 / 60;
                     if (!csv) {
-                        Console.WriteLine("Statements: " + statementCount + " / " + maxStatementCount);
+                        Console.WriteLine("Statements: " + statementCount);
+                        Console.WriteLine("Minutes (max: " + maxMinutes + "): " + estimatedMinutes
+                                          + " (" + time + "[ms] * " + statementCount + ") / ");
                     }
 
-                    if (statementCount > maxStatementCount) {
+                    if (estimatedMinutes > maxMinutes) {
                         Console.Error.WriteLine("Too many statement.");
                         Environment.Exit(-1);
                     }
