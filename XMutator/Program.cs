@@ -49,7 +49,10 @@ namespace XMutator {
         }
 
         private static IEnumerable<string> GetAllJavaFiles(string dirPath) {
-            return Directory.GetFiles(dirPath, "*.java", SearchOption.AllDirectories);
+            if (Directory.Exists(dirPath)) {
+                return Directory.GetFiles(dirPath, "*.java", SearchOption.AllDirectories);
+            }
+            return Enumerable.Empty<string>();
         }
 
         private static void RemoveReadonlyAttribute(DirectoryInfo dirInfo) {
@@ -210,9 +213,8 @@ namespace XMutator {
                             }
                             node.Replacement = "{}";
 
-                            using (var mutant = new StreamWriter(filePath, false, encoding)) {
+                            using (var mutant = new StreamWriter(filePath, false, encoding))
                                 mutant.WriteLine(tree.Code);
-                            }
                             //Console.WriteLine(tree.Code);
                             node.Replacement = null;
                             generatedMutatns++;
@@ -223,9 +225,8 @@ namespace XMutator {
                             }
                         }
 
-                        using (var original = new StreamWriter(filePath, false, encoding)) {
+                        using (var original = new StreamWriter(filePath, false, encoding))
                             original.WriteLine(tree.Code);
-                        }
                         if (!csv) {
                             Console.WriteLine("");
                         }
