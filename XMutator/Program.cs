@@ -15,35 +15,37 @@ using Paraiba.Text;
 namespace XMutator {
     internal class Program {
         // run maven test
-        private static bool MavenTest(string dirPath) {
+        private static bool MavenTest(string dirPath, int maxMilliseconds) {
             Directory.SetCurrentDirectory(dirPath);
 
-            var p = new Process {
+            using (var p = new Process {
                 StartInfo = {
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardInput = false,
                     CreateNoWindow = true,
                 },
-            };
-            if (!ParaibaEnvironment.OnUnixLike()) {
-                p.StartInfo.FileName = Environment.GetEnvironmentVariable("ComSpec");
-                p.StartInfo.Arguments = "/c mvn test";
-            } else {
-                p.StartInfo.FileName = "mvn";
-                p.StartInfo.Arguments = "test";
+            }) {
+                if (!ParaibaEnvironment.OnUnixLike()) {
+                    p.StartInfo.FileName = Environment.GetEnvironmentVariable("ComSpec");
+                    p.StartInfo.Arguments = "/c mvn test";
+                } else {
+                    p.StartInfo.FileName = "mvn";
+                    p.StartInfo.Arguments = "test";
+                }
+
+                p.Start();
+                var res = p.StandardOutput.ReadToEnd();
+                var endCode = p.ExitCode;
+                if (!p.WaitForExit(maxMilliseconds)) {
+                    p.Kill();
+                    return false;
+                }
+                //Console.WriteLine(res);
+
+                var passed = endCode == 0;
+                return passed;
             }
-
-            p.Start();
-            var res = p.StandardOutput.ReadToEnd();
-            var endCode = p.ExitCode;
-            p.WaitForExit();
-            p.Close();
-
-            //Console.WriteLine(res);
-
-            var passed = endCode == 0;
-            return passed;
         }
 
         private static IEnumerable<string> GetAllJavaFiles(string dirPath) {
@@ -148,18 +150,6 @@ namespace XMutator {
                     //var projName = Path.GetFileName(dirPath);
                     //CopyDirectory(dirPath, Path.Combine("backup", projName));
 
-                    if (!MavenTest(dirPath)) {
-                        Console.Error.WriteLine("Test cases have already failed.");
-                        Environment.Exit(-1);
-                    }
-
-                    var time = Environment.TickCount;
-                    MavenTest(dirPath);
-                    time = (Environment.TickCount - time);
-
-                    var generatedMutatns = 0;
-                    var killedMutants = 0;
-
                     var files = Directory.GetFiles(dirPath, "pom.xml", SearchOption.AllDirectories)
                             .Select(pomPath => GetSourceDirectoryPath(new FileInfo(pomPath)))
                             .SelectMany(GetAllJavaFiles)
@@ -169,7 +159,20 @@ namespace XMutator {
                             .SelectMany(cst => cst.Descendants("statement"))
                             .Count();
 
-                    var estimatedMinutes = time * statementCount / 1000 / 60;
+                    if (!MavenTest(dirPath, maxMinutes * 60 * 1000 / 10)) {
+                        Console.Error.WriteLine("Test cases have already failed.");
+                        Environment.Exit(-1);
+                    }
+
+                    var maxMillisecondsForTesting = maxMinutes * 60 * 1000 / statementCount;
+                    var time = Environment.TickCount;
+                    MavenTest(dirPath, maxMillisecondsForTesting);
+                    time = (Environment.TickCount - time);
+
+                    var generatedMutatns = 0;
+                    var killedMutants = 0;
+
+                    var estimatedMinutes = time * statementCount / 60 / 1000;
                     if (!csv) {
                         Console.WriteLine("Statements: " + statementCount);
                         Console.WriteLine("Minutes (max: " + maxMinutes + "): " + estimatedMinutes
@@ -177,7 +180,7 @@ namespace XMutator {
                     }
 
                     if (estimatedMinutes > maxMinutes) {
-                        Console.Error.WriteLine("Too many statement.");
+                        Console.Error.WriteLine("Too long time (" + estimatedMinutes + "[min]).");
                         Environment.Exit(-1);
                     }
 
@@ -207,20 +210,22 @@ namespace XMutator {
                             }
                             node.Replacement = "{}";
 
-                            using (var mutant = new StreamWriter(filePath, false, encoding))
+                            using (var mutant = new StreamWriter(filePath, false, encoding)) {
                                 mutant.WriteLine(tree.Code);
+                            }
                             //Console.WriteLine(tree.Code);
                             node.Replacement = null;
                             generatedMutatns++;
 
-                            var passed = MavenTest(dirPath);
+                            var passed = MavenTest(dirPath, maxMillisecondsForTesting * 5);
                             if (!passed) {
                                 killedMutants++;
                             }
                         }
 
-                        using (var original = new StreamWriter(filePath, false, encoding))
+                        using (var original = new StreamWriter(filePath, false, encoding)) {
                             original.WriteLine(tree.Code);
+                        }
                         if (!csv) {
                             Console.WriteLine("");
                         }
