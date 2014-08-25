@@ -21,7 +21,7 @@ namespace XMutator {
             using (var p = new Process {
                 StartInfo = {
                     UseShellExecute = false,
-                    RedirectStandardOutput = true,
+                    RedirectStandardOutput = false,
                     RedirectStandardInput = false,
                     CreateNoWindow = true,
                 },
@@ -35,15 +35,13 @@ namespace XMutator {
                 }
 
                 p.Start();
-                var res = p.StandardOutput.ReadToEnd();
-                var endCode = p.ExitCode;
                 if (!p.WaitForExit(maxMilliseconds)) {
                     p.Kill();
                     return false;
                 }
                 //Console.WriteLine(res);
 
-                var passed = endCode == 0;
+                var passed = p.ExitCode == 0;
                 return passed;
             }
         }
