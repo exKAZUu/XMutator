@@ -13,9 +13,15 @@ using Paraiba.Linq;
 using Paraiba.Text;
 
 namespace XMutator {
+    internal enum TestResult {
+        Passed,
+        Failed,
+        TimeOver,
+    }
+
     internal class Program {
         // run maven test
-        private static bool MavenTest(string dirPath, int maxMilliseconds) {
+        private static TestResult MavenTest(string dirPath, int maxMilliseconds) {
             Directory.SetCurrentDirectory(dirPath);
 
             using (var p = new Process {
@@ -35,16 +41,22 @@ namespace XMutator {
                 }
 
                 p.Start();
-                Console.WriteLine("Executing mvn test with the time limitation: " + (maxMilliseconds * 1.0 / 60 / 1000) + "[mins]");
                 if (!p.WaitForExit(maxMilliseconds)) {
                     p.Kill();
-                    return false;
+                    return TestResult.TimeOver;
                 }
                 //Console.WriteLine(res);
 
-                var passed = p.ExitCode == 0;
-                return passed;
+                return p.ExitCode == 0 ? TestResult.Passed : TestResult.Failed;
             }
+        }
+
+        private static IEnumerable<FileInfo> GetAllPomFiles(string dirPath) {
+            var pomFilePath = Path.Combine(dirPath, "pom.xml");
+            if (File.Exists(pomFilePath)) {
+                return GetSubmoduleDirectoryPaths(new FileInfo(pomFilePath));
+            }
+            return Enumerable.Empty<FileInfo>();
         }
 
         private static IEnumerable<string> GetAllJavaFiles(string dirPath) {
@@ -107,6 +119,20 @@ namespace XMutator {
             }
         }
 
+        private static IEnumerable<FileInfo> GetSubmoduleDirectoryPaths(FileInfo pomFileInfo) {
+            yield return pomFileInfo;
+            using (var fs = pomFileInfo.OpenRead()) {
+                var doc = XDocument.Load(fs);
+                var modules = doc.Descendants("modules").FirstOrDefault();
+                if (modules != null) {
+                    foreach (var e in modules.Elements("module")) {
+                        yield return new FileInfo(
+                                Path.Combine(pomFileInfo.DirectoryName, e.Value, "pom.xml"));
+                    }
+                }
+            }
+        }
+
         private static string GetSourceDirectoryPath(FileInfo pomFileInfo) {
             using (var fs = pomFileInfo.OpenRead()) {
                 var doc = XDocument.Load(fs);
@@ -152,8 +178,8 @@ namespace XMutator {
                     //var projName = Path.GetFileName(dirPath);
                     //CopyDirectory(dirPath, Path.Combine("backup", projName));
 
-                    var files = Directory.GetFiles(dirPath, "pom.xml", SearchOption.AllDirectories)
-                            .Select(pomPath => GetSourceDirectoryPath(new FileInfo(pomPath)))
+                    var files = GetAllPomFiles(dirPath)
+                            .Select(GetSourceDirectoryPath)
                             .SelectMany(GetAllJavaFiles)
                             .ToList();
                     var statementCount = files.Select(
@@ -161,29 +187,35 @@ namespace XMutator {
                             .SelectMany(cst => cst.Descendants("statement"))
                             .Count();
 
-                    if (!MavenTest(dirPath, maxMinutes * 60 * 1000 / 10)) {
-                        Console.Error.WriteLine("Test cases have already failed.");
+                    if (statementCount < 10) {
+                        Console.Error.WriteLine("Too small project (" + statementCount
+                                                + "[statements]).");
+                        ShowResultInCsv(statementCount);
                         Environment.Exit(-1);
                     }
 
-                    var maxMillisecondsForTesting = maxMinutes * 60 * 1000 / statementCount;
-                    var time = Environment.TickCount;
-                    MavenTest(dirPath, maxMillisecondsForTesting);
-                    time = (Environment.TickCount - time);
+                    TryMavenTest(dirPath, maxMinutes * 60 * 1000 / 10, statementCount);
+
+                    var maxMillisecondsToTest = maxMinutes * 60 * 1000 / statementCount;
+                    var millisecondsToTest = Environment.TickCount;
+                    TryMavenTest(dirPath, maxMillisecondsToTest, statementCount);
+                    millisecondsToTest = (Environment.TickCount - millisecondsToTest);
 
                     var generatedMutatns = 0;
                     var killedMutants = 0;
 
-                    var estimatedMinutes = time * statementCount / 60 / 1000;
+                    var estimatedMinutes = millisecondsToTest * statementCount / 60 / 1000;
                     if (!csv) {
                         Console.WriteLine("Statements: " + statementCount);
                         Console.WriteLine("Minutes (max: " + maxMinutes + "): " + estimatedMinutes
-                                          + " (" + time + "[ms] * " + statementCount + ") / ");
+                                          + " (" + millisecondsToTest + "[ms] * " + statementCount
+                                          + ") / ");
                     }
 
                     if (estimatedMinutes > maxMinutes) {
                         Console.Error.WriteLine("Too long time (" + estimatedMinutes + "[min]).");
-                        Environment.Exit(-1);
+                        ShowResultInCsv(statementCount, millisecondsToTest);
+                        Environment.Exit(-2);
                     }
 
                     foreach (var filePath in files) {
@@ -212,20 +244,21 @@ namespace XMutator {
                             }
                             node.Replacement = "{}";
 
-                            using (var mutant = new StreamWriter(filePath, false, encoding))
+                            using (var mutant = new StreamWriter(filePath, false, encoding)) {
                                 mutant.WriteLine(tree.Code);
+                            }
                             //Console.WriteLine(tree.Code);
                             node.Replacement = null;
                             generatedMutatns++;
 
-                            var passed = MavenTest(dirPath, maxMillisecondsForTesting * 5);
-                            if (!passed) {
+                            if (MavenTest(dirPath, maxMillisecondsToTest * 5) != TestResult.Passed) {
                                 killedMutants++;
                             }
                         }
 
-                        using (var original = new StreamWriter(filePath, false, encoding))
+                        using (var original = new StreamWriter(filePath, false, encoding)) {
                             original.WriteLine(tree.Code);
+                        }
                         if (!csv) {
                             Console.WriteLine("");
                         }
@@ -234,7 +267,8 @@ namespace XMutator {
                     // Measure mutation scores
                     var percentage = killedMutants * 100 / generatedMutatns;
                     if (csv) {
-                        Console.WriteLine(killedMutants + "," + generatedMutatns + "," + percentage);
+                        ShowResultInCsv(statementCount, millisecondsToTest, killedMutants,
+                                generatedMutatns, percentage);
                     } else {
                         Console.WriteLine(dirPath + ": " + killedMutants + " / " + generatedMutatns
                                           + ": " + percentage + "%");
@@ -243,6 +277,32 @@ namespace XMutator {
             } else {
                 p.WriteOptionDescriptions(Console.Out);
             }
+        }
+
+        private static void TryMavenTest(string dirPath, int maxMilliseconds, int statementCount) {
+            switch (MavenTest(dirPath, maxMilliseconds)) {
+            case TestResult.Passed:
+                break;
+            case TestResult.Failed:
+                Console.Error.WriteLine("Failed.");
+                ShowResultInCsv(statementCount);
+                Environment.Exit(-1);
+                break;
+            case TestResult.TimeOver:
+                Console.Error.WriteLine("Timeover.");
+                ShowResultInCsv(statementCount);
+                Environment.Exit(-1);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+            }
+        }
+
+        private static void ShowResultInCsv(
+                int statementCount, int millisecondsToTest = -2,
+                int killedMutants = -2, int generatedMutatns = -2, int percentage = -2) {
+            Console.WriteLine(killedMutants + "," + generatedMutatns + "," + percentage + ","
+                              + statementCount + "," + millisecondsToTest);
         }
     }
 }
