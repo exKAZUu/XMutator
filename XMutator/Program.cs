@@ -35,6 +35,7 @@ namespace XMutator {
                 }
 
                 p.Start();
+                Console.WriteLine("Executing mvn test with the time limitation: " + (maxMilliseconds * 1.0 / 60 / 1000) + "[mins]");
                 if (!p.WaitForExit(maxMilliseconds)) {
                     p.Kill();
                     return false;
