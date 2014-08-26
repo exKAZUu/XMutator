@@ -123,9 +123,9 @@ namespace XMutator {
             yield return pomFileInfo;
             using (var fs = pomFileInfo.OpenRead()) {
                 var doc = XDocument.Load(fs);
-                var modules = doc.Descendants("modules").FirstOrDefault();
+                var modules = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "modules");
                 if (modules != null) {
-                    foreach (var e in modules.Elements("module")) {
+                    foreach (var e in modules.Elements().Where(e => e.Name.LocalName == "module")) {
                         yield return new FileInfo(
                                 Path.Combine(pomFileInfo.DirectoryName, e.Value, "pom.xml"));
                     }
@@ -136,8 +136,9 @@ namespace XMutator {
         private static string GetSourceDirectoryPath(FileInfo pomFileInfo) {
             using (var fs = pomFileInfo.OpenRead()) {
                 var doc = XDocument.Load(fs);
-                foreach (var e in doc.Descendants("build")) {
-                    var e2 = e.Element("sourceDirectory");
+                foreach (var build in doc.Descendants().Where(e => e.Name.LocalName == "build")) {
+                    var e2 = build.Elements()
+                            .FirstOrDefault(e => e.Name.LocalName == "sourceDirectory");
                     if (e2 != null) {
                         var splitter = e2.Value.Contains("/") ? '/' : '\\';
                         return Path.Combine(pomFileInfo.DirectoryName,
