@@ -29,7 +29,7 @@ namespace XMutator {
                     UseShellExecute = false,
                     RedirectStandardOutput = false,
                     RedirectStandardInput = false,
-                    CreateNoWindow = true,
+                    CreateNoWindow = false,
                 },
             }) {
                 if (!ParaibaEnvironment.OnUnixLike()) {
@@ -42,7 +42,7 @@ namespace XMutator {
 
                 p.Start();
                 if (!p.WaitForExit(maxMilliseconds)) {
-                    p.Kill();
+                    p.KillAllProcessesSpawnedBy();
                     return TestResult.TimeOver;
                 }
                 //Console.WriteLine(res);
