@@ -180,6 +180,7 @@ namespace XMutator {
                     //CopyDirectory(dirPath, Path.Combine("backup", projName));
 
                     var files = GetAllPomFiles(dirPath)
+                            .Where(info => info.Exists)
                             .Select(GetSourceDirectoryPath)
                             .SelectMany(GetAllJavaFiles)
                             .ToList();
@@ -285,12 +286,12 @@ namespace XMutator {
             case TestResult.Passed:
                 break;
             case TestResult.Failed:
-                Console.Error.WriteLine("Failed.");
+                Console.Error.WriteLine("Test Failed.");
                 ShowResultInCsv(statementCount);
                 Environment.Exit(-1);
                 break;
             case TestResult.TimeOver:
-                Console.Error.WriteLine("Timeover.");
+                Console.Error.WriteLine("Test Timeover.");
                 ShowResultInCsv(statementCount);
                 Environment.Exit(-1);
                 break;
