@@ -122,8 +122,12 @@ namespace XMutator {
         private static IEnumerable<FileInfo> GetSubmoduleDirectoryPaths(FileInfo pomFileInfo) {
             yield return pomFileInfo;
             using (var fs = pomFileInfo.OpenRead()) {
-                var doc = XDocument.Load(fs);
-                var modules = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "modules");
+                XElement modules = null;
+                try {
+                    var doc = XDocument.Load(fs);
+                    modules = doc.Descendants()
+                            .FirstOrDefault(e => e.Name.LocalName == "modules");
+                } catch {}
                 if (modules != null) {
                     foreach (var e in modules.Elements().Where(e => e.Name.LocalName == "module")) {
                         yield return new FileInfo(
@@ -134,18 +138,20 @@ namespace XMutator {
         }
 
         private static string GetSourceDirectoryPath(FileInfo pomFileInfo) {
-            using (var fs = pomFileInfo.OpenRead()) {
-                var doc = XDocument.Load(fs);
-                foreach (var build in doc.Descendants().Where(e => e.Name.LocalName == "build")) {
-                    var e2 = build.Elements()
-                            .FirstOrDefault(e => e.Name.LocalName == "sourceDirectory");
-                    if (e2 != null) {
-                        var splitter = e2.Value.Contains("/") ? '/' : '\\';
-                        return Path.Combine(pomFileInfo.DirectoryName,
-                                Path.Combine(e2.Value.Split(splitter)));
+            try {
+                using (var fs = pomFileInfo.OpenRead()) {
+                    var doc = XDocument.Load(fs);
+                    foreach (var build in doc.Descendants().Where(e => e.Name.LocalName == "build")) {
+                        var e2 = build.Elements()
+                                .FirstOrDefault(e => e.Name.LocalName == "sourceDirectory");
+                        if (e2 != null) {
+                            var splitter = e2.Value.Contains("/") ? '/' : '\\';
+                            return Path.Combine(pomFileInfo.DirectoryName,
+                                    Path.Combine(e2.Value.Split(splitter)));
+                        }
                     }
                 }
-            }
+            } catch {}
             return Path.Combine(pomFileInfo.DirectoryName, "src", "main");
         }
 
