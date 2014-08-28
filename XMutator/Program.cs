@@ -184,8 +184,8 @@ namespace XMutator {
                             .Select(GetSourceDirectoryPath)
                             .SelectMany(GetAllJavaFiles)
                             .ToList();
-                    var statementCount = files.Select(
-                            f => CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodePath(f))
+                    var statementCount = files.Select(GenerateTreeFromCodePath)
+                            .Where(cst => cst != null)
                             .SelectMany(cst => cst.Descendants("statement"))
                             .Count();
 
@@ -231,7 +231,12 @@ namespace XMutator {
                             }
                         }
                         var code = File.ReadAllText(filePath, encoding);
-                        var tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code);
+                        CstNode tree;
+                        try {
+                            tree = CstGenerators.JavaUsingAntlr3.GenerateTreeFromCodeText(code, true);
+                        } catch {
+                            continue;
+                        }
                         var nodes = tree.Descendants("statement")
                                 .ToList()
                                 .Shuffle();
@@ -278,6 +283,15 @@ namespace XMutator {
                 }
             } else {
                 p.WriteOptionDescriptions(Console.Out);
+            }
+        }
+
+        private static CstNode GenerateTreeFromCodePath(string f) {
+            try {
+                return CstGenerators.JavaUsingAntlr3
+                        .GenerateTreeFromCodePath(f, null, true);
+            } catch {
+                return null;
             }
         }
 
