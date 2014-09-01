@@ -13,7 +13,7 @@ using Paraiba.Linq;
 using Paraiba.Text;
 
 namespace XMutator {
-    internal enum TestResult {
+    internal enum ExecutionResult {
         Passed,
         Failed,
         TimeOver,
@@ -21,7 +21,8 @@ namespace XMutator {
 
     internal class Program {
         // run maven test
-        private static TestResult MavenTest(string dirPath, int maxMilliseconds) {
+        private static ExecutionResult ExecuteMaven(
+                string dirPath, string mavenCommand, int maxMilliseconds) {
             Directory.SetCurrentDirectory(dirPath);
 
             using (var p = new Process {
@@ -34,10 +35,10 @@ namespace XMutator {
             }) {
                 if (!ParaibaEnvironment.OnUnixLike()) {
                     p.StartInfo.FileName = Environment.GetEnvironmentVariable("ComSpec");
-                    p.StartInfo.Arguments = "/c mvn test";
+                    p.StartInfo.Arguments = "/c mvn " + mavenCommand;
                 } else {
                     p.StartInfo.FileName = "mvn";
-                    p.StartInfo.Arguments = "test";
+                    p.StartInfo.Arguments = mavenCommand;
                 }
 
                 p.Start();
@@ -45,11 +46,11 @@ namespace XMutator {
                     try {
                         p.KillAllProcessesSpawnedBy();
                     } catch {}
-                    return TestResult.TimeOver;
+                    return ExecutionResult.TimeOver;
                 }
                 //Console.WriteLine(res);
 
-                return p.ExitCode == 0 ? TestResult.Passed : TestResult.Failed;
+                return p.ExitCode == 0 ? ExecutionResult.Passed : ExecutionResult.Failed;
             }
         }
 
@@ -212,6 +213,7 @@ namespace XMutator {
                     millisecondsToTest = (Environment.TickCount - millisecondsToTest);
 
                     var generatedMutatns = 0;
+                    var erroredMutants = 0;
                     var killedMutants = 0;
 
                     var estimatedMinutes = millisecondsToTest * statementCount / 60 / 1000;
@@ -264,9 +266,16 @@ namespace XMutator {
                             }
                             //Console.WriteLine(tree.Code);
                             node.Replacement = null;
-                            generatedMutatns++;
 
-                            if (MavenTest(dirPath, maxMillisecondsToTest * 5) != TestResult.Passed) {
+                            if (ExecuteMaven(dirPath, "compile", maxMillisecondsToTest * 5)
+                                != ExecutionResult.Passed) {
+                                erroredMutants++;
+                                continue;
+                            }
+
+                            generatedMutatns++;
+                            if (ExecuteMaven(dirPath, "test", maxMillisecondsToTest * 5)
+                                       != ExecutionResult.Passed) {
                                 killedMutants++;
                             }
                         }
@@ -280,10 +289,10 @@ namespace XMutator {
                     }
 
                     // Measure mutation scores
-                    var percentage = killedMutants * 100 / generatedMutatns;
+                    var percentage = generatedMutatns > 0 ? killedMutants * 100 / generatedMutatns : -1;
                     if (csv) {
                         ShowResultInCsv(statementCount, millisecondsToTest, killedMutants,
-                                generatedMutatns, percentage);
+                                erroredMutants, generatedMutatns, percentage);
                     } else {
                         Console.WriteLine(dirPath + ": " + killedMutants + " / " + generatedMutatns
                                           + ": " + percentage + "%");
@@ -304,15 +313,15 @@ namespace XMutator {
         }
 
         private static void TryMavenTest(string dirPath, int maxMilliseconds, int statementCount) {
-            switch (MavenTest(dirPath, maxMilliseconds)) {
-            case TestResult.Passed:
+            switch (ExecuteMaven(dirPath, "test", maxMilliseconds)) {
+            case ExecutionResult.Passed:
                 break;
-            case TestResult.Failed:
+            case ExecutionResult.Failed:
                 Console.Error.WriteLine("Test Failed.");
                 ShowResultInCsv(statementCount);
                 Environment.Exit(-1);
                 break;
-            case TestResult.TimeOver:
+            case ExecutionResult.TimeOver:
                 Console.Error.WriteLine("Test Timeover.");
                 ShowResultInCsv(statementCount);
                 Environment.Exit(-1);
@@ -323,10 +332,10 @@ namespace XMutator {
         }
 
         private static void ShowResultInCsv(
-                int statementCount, int millisecondsToTest = -2,
-                int killedMutants = -2, int generatedMutatns = -2, int percentage = -2) {
-            Console.WriteLine(killedMutants + "," + generatedMutatns + "," + percentage + ","
-                              + statementCount + "," + millisecondsToTest);
+                int statementCount, int millisecondsToTest = -2, int killedMutants = -2,
+                int erroredMutants = -2, int generatedMutatns = -2, int percentage = -2) {
+            Console.WriteLine(killedMutants + "," + erroredMutants + "," + generatedMutatns + ","
+                              + percentage + "," + statementCount + "," + millisecondsToTest);
         }
     }
 }
